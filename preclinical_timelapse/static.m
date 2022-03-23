@@ -1,26 +1,7 @@
-
-% SEGMENTATION TEST, Version 2
-% Creates an interface where you can test structural element parameters for segmentation
-% Optimized for the mouse tibia
-
-% Written by Maximillian Rummler in 2019, using segmentation method from
-% cortEval_2 and trabEval_2 routines, originally written by Annette
-% Birkhold in 2011.
-
-% LICENSE
-% This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License
-% as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-% This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; 
-% without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. 
-% For more details: https://www.gnu.org/licenses/gpl-3.0.html.
-
-
-% RUNS IN MATLAB VERSION R2016b 9.1.0.441655
-function[] = seg_test_2(inputfiles, paths, thresh, morph)
-
-% Calls an implay function at the end to look slicewise through the
-% segmentation
-
+function[] = static(inputfiles, paths, thresh, morph, bone_main_axis, voxelsize, res_folder)
+%% 2022-03-10 Update
+% This comes V1.6 "seg_only.m"
+% ======================================================================= %
 % INPUT
 % inputfiles - nx1 cell array, ordered according to chronology of n scans
 % paths - nx1 cell array, ordered as files
@@ -29,15 +10,16 @@ function[] = seg_test_2(inputfiles, paths, thresh, morph)
 
 % open up a progress bar to check whether the programm is running
 uf = uifigure;
-name = uf.Name;
-uf.Name = 'Running Segmentation';
+uf.Name = 'Running Evaluation';
 uf.InnerPosition = [500 500 400 75];
 progress = uiprogressdlg(uf,'Message','Please wait...','Indeterminate','on');
 
 % Get files
 reffile = inputfiles{1};
 path = paths{1};
-level = thresh(1);
+%% Change Hub and Sarah
+level_x = thresh(2,1);
+
 files = inputfiles(2:end); % excludes ref file
 path_2 = paths{2}; % excludes ref path
 
@@ -59,36 +41,8 @@ a_2 = strrep(files, '.tif', '');
 b_2 = isequal(a_2, reffile);
 c_2 = strrep(a_2, '.mat', '');
 
-% Open ref file
-if b_1 == 1
-    IMG_day0 = importdata([path reffile]);
-    Image_day0(:,:,:) = IMG_day0(1,:,:,:);
-else % input is tiff, slice-wise opening
-    IMG_day0 = Tiff([path reffile], 'r');
-    info = imfinfo([path reffile]);
-    s = size(info);
-    s = s(1);
-    r1 = read(IMG_day0);
-    S = size(r1);
-    m = S(1);
-    n = S(2);
-    Image_day0 = zeros(m, n, s);
-    for i = 1:s-1
-        Image_day0(:,:,i) = read(IMG_day0);
-        nextDirectory(IMG_day0);
-    end
-    Image_day0 = int16(Image_day0);
-end
 
-% Filtering ref file
-Image_0 = smooth3(Image_day0,'gaussian',[3 3 3],0.65);
-Image_tresh0 = Image_0 >= level;
-clear IMG_day0 & Image_day0 & Image_0;
-
-% Convert ref file into 8bit integer
-Image_t0 = uint8(Image_tresh0);
-clear Image_tresh0;
-
+%% 
 if b_1 == 1
     IMG_dayX = importdata([path_2 char(files(1))]);
     Image_dayX(:,:,:) = IMG_dayX(1,:,:,:);
@@ -106,33 +60,22 @@ else % input is tiff, slice-wise opening
         Image_dayX(:,:,i) = read(IMG_dayX);
         nextDirectory(IMG_dayX);
     end
-    Image_dayX = int16(Image_dayX);
-end
 
-% Filtering/thresholding file X
-Image_X = smooth3(Image_dayX,'gaussian',[3 3 3],0.65);
-Image_treshX = Image_X >= thresh(m+1);
-clear IMG_dayX & Image_dayX & Image_X;
+end
+ Image_dayX = switching_direction(Image_dayX, bone_main_axis);
+
+%% NO SMOOTH
+% ------ NO SMOOTH -------% 
+Image_X = Image_dayX;
+% ------ NO SMOOTH -------% 
+Image_treshX = Image_X >= level_x;
+clear IMG_dayX & Image_dayX ; 
 
 % Convert file X to 8-bit
 Image_tX = uint8(Image_treshX);
-clear Image_treshX;
+% clear Image_treshX;
 
-% resorbed bone = volumes only in day 0
-resorbed_bone_X = (Image_tX == 0) & (Image_t0 == 1);
-resorbed_bone = uint8(resorbed_bone_X);
-
-% formed bone = volumes only in day X
-formed_bone_X = (Image_tX == 1) & (Image_t0 == 0);
-formed_bone = uint8(formed_bone_X);
-
-% constant bone = volumes in both datasets
-constant_bone_X = Image_t0 - resorbed_bone;
-constant_bone = uint8(constant_bone_X);
-
-% Creating labels
-Result_volumes_inclsurf = constant_bone + formed_bone + resorbed_bone;
-
+Result_volumes_inclsurf = uint8(Image_tX);
 % create result arrays and fill them with zeros
 [I_x,I_y,I_z] = size(Result_volumes_inclsurf);
 Result_trab =   zeros(I_x,I_y,I_z);
@@ -180,14 +123,13 @@ for n = 1:I_z
     I15 = (cort_bone == 1) & (I13 == 0);
     I16 = uint8(I14);
     I17 = uint8(I15);
+    Result_TV_trab(:,:,n) = I9(:,:);
     Result_trab(:,:,n) = trab_bone(:,:);
+    Result_TV_cort(:,:,n) = I4(:,:);
     Result_cort(:,:,n) = cort_bone(:,:);
     Endosteal_both(:,:,n) = I16(:,:);
     Periosteal_both(:,:,n) = I17(:,:);
-    %     clear I_bin & I2 & I3 & I4 & I5 & I6 & I7 & I8 & I9 & I10 & I11 & I12 & I13 & I14 & I15 & I16 & I17 & trab_bone & cort_bone
 end
-
-% % the following is just to check if the image segmentation went well!
 
 C = zeros(I_x,I_y,I_z);
 D = zeros(I_x,I_y,I_z);
@@ -196,35 +138,45 @@ for n = 1:I_z
     D(:,:,n) = Endosteal_both(:,:,n) + 2*Periosteal_both(:,:,n);
 end
 
+%% surface calcs
+% here follows the surface calculations
+
+[I_x,I_y,I_z] = size(Result_cort);
+    Image_surf_labels = zeros(I_x,I_y,I_z);
+    parfor n = 1:I_z %slicewise
+        I_bin = Result_cort(:,:,n);
+        I2 = bwmorph(I_bin,'remove'); % deletes everything but surface voxels
+        Image_surf_labels(:,:,n) = I2(:,:);
+    end
+    clear I_x & I_y & I_z;
+    cort_BS = nnz(Image_surf_labels) *(voxelsize^2);
+
+%% CALCULATIONS
+% here follows calculations for BV/TV and BS/BV for both cortical bone and
+% trabecular bone
+trab_TV = nnz(Result_TV_trab) * (voxelsize^3);
+trab_BV = nnz(Result_trab) * (voxelsize^3);
+trab_BVTV = trab_BV/trab_TV;
+%cortical bone
+cort_TV = nnz(Result_TV_cort) * (voxelsize^3);
+cort_BV = nnz(Result_cort) * (voxelsize^3);
+cort_BVTV = cort_BV/cort_TV;
+cort_BSBV = cort_BS/cort_BV;
+
+%% write data
+path_VISres = strcat(char(res_folder(1)), '\static\');
+if ~ exist(path_VISres,'dir')
+    mkdir(path_VISres);
+end
+filename = char(c_2(1));
+Parameters = {'trab_TV';'trab_BV';'trab_BVTV';'cort_TV';'cort_BV';'cort_BVTV';'cort_BSBV'};
+Values = [trab_TV;trab_BV;trab_BVTV;cort_TV;cort_BV;cort_BVTV;cort_BSBV];
+resultsfile = strcat(path_VISres, filename, '_static.xlsx');
+
+T = table(Parameters, Values);
+writetable(T, resultsfile);
+
 % close the progress bar
 close(progress);
 close(uf);
-
-% define the limits for the colormap in implay
-limits=[0 2];
-ImplayWithMap(C, 50, limits);
-ImplayWithMap(D, 50, limits);
-
-
-
-    function [handle] = ImplayWithMap(frames, fps, limits)
-        %ImplayWithMap Calls the implay function and adjust the color map
-        % Call it with 3 parameters:
-        % ImplayWithMap(frames, fps, limits)
-        % frames - 4D arrray of images
-        % fps - frame rate
-        % limits - an array of 2 elements, specifying the lower / upper
-        % of the liearly mapped colormap
-        % Returns a nadle to the player
-        %
-        % example:
-        % h = ImplayWithMap(MyFrames, 30, [10 50])
-        
-        
-        handle = implay(frames, fps);
-        handle.Visual.ColorMap.UserRangeMin = limits(1);
-        handle.Visual.ColorMap.UserRangeMax = limits(2);
-        handle.Visual.ColorMap.UserRange = 1;
-    end
-
 end
